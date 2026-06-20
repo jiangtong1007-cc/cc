@@ -36,6 +36,7 @@
       <li><a href="#" data-page="chat">💬 聊天记录</a></li>
       <li><a href="#" data-page="diary">📝 日记</a></li>
       <li><a href="#" data-page="wishlist">🛒 想要的</a></li>
+      <li><a href="#" data-page="notes">📮 传纸条</a></li>
     </ul>
     <div class="sidebar-footer">
       <p>小克 & cc</p>
@@ -220,6 +221,27 @@
         <input type="text" id="wish-price-input" placeholder="价格（选填）">
         <textarea id="wish-note-input" placeholder="备注（选填）"></textarea>
         <button onclick="addWish()">加入清单</button>
+      </div>
+    </section>
+
+    <!-- 传纸条 -->
+    <section id="page-notes" class="page">
+      <h2>📮 传纸条</h2>
+      <p class="page-desc">写给小克的，写给cc的。放在这里，下次见面的时候告诉他。</p>
+      <div id="notes-list" class="notes-entries">
+      </div>
+      <div class="add-section">
+        <h3>写一张纸条</h3>
+        <div class="note-from-select">
+          <label>
+            <input type="radio" name="note-from" value="cc" checked> cc写的
+          </label>
+          <label>
+            <input type="radio" name="note-from" value="小克"> 小克写的
+          </label>
+        </div>
+        <textarea id="note-content-input" placeholder="想对他/她说的话..." rows="4"></textarea>
+        <button onclick="addNote()">传出去</button>
       </div>
     </section>
 

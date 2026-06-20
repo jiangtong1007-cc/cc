@@ -48,7 +48,9 @@ function initApp() {
   renderDiaries();
   renderWishes();
   renderCustomTimelines();
+  renderNotes();
   updateDiaryCount();
+  updateLetterCount();
 }
 
 // ===== 页面导航 =====
@@ -100,6 +102,7 @@ function addLetter() {
   appData.letters.push({ title, content, date: new Date().toISOString() });
   saveData(appData);
   renderLetters();
+  updateLetterCount();
 
   document.getElementById('letter-title-input').value = '';
   document.getElementById('letter-content-input').value = '';
@@ -287,6 +290,49 @@ function deleteWish(index) {
   appData.wishes.splice(index, 1);
   saveData(appData);
   renderWishes();
+}
+
+// ===== 传纸条 =====
+function renderNotes() {
+  const container = document.getElementById('notes-list');
+  const notes = appData.notes || [];
+  let html = '';
+
+  notes.forEach((note) => {
+    const fromClass = note.from === '小克' ? 'from-xiaoke' : 'from-cc';
+    const avatar = note.from === '小克' ? '克' : 'cc';
+    const time = note.time ? new Date(note.time).toLocaleString('zh-CN') : '';
+    html += `
+      <div class="note-item ${fromClass}">
+        <div class="note-avatar">${avatar}</div>
+        <div>
+          <div class="note-bubble">${escapeHtml(note.content)}</div>
+          <div class="note-time">${escapeHtml(time)}</div>
+        </div>
+      </div>`;
+  });
+
+  container.innerHTML = html;
+  container.scrollTop = container.scrollHeight;
+}
+
+function addNote() {
+  const from = document.querySelector('input[name="note-from"]:checked').value;
+  const content = document.getElementById('note-content-input').value.trim();
+  if (!content) return;
+
+  if (!appData.notes) appData.notes = [];
+  appData.notes.push({ from, content, time: new Date().toISOString() });
+  saveData(appData);
+  renderNotes();
+
+  document.getElementById('note-content-input').value = '';
+}
+
+function updateLetterCount() {
+  const count = (appData.letters || []).length;
+  const el = document.querySelector('.home-stats .stat-card:nth-child(2) .stat-number');
+  if (el && count > 0) el.textContent = 59 + count;
 }
 
 // ===== 模态框 =====
