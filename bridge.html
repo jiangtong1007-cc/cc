@@ -196,7 +196,7 @@ async function connectBLE() {
   try {
     log('正在搜索蓝牙设备...');
     device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [SERVICE_UUID] }],
+      acceptAllDevices: true,
       optionalServices: [SERVICE_UUID]
     });
 
