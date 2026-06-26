@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLE Bridge - 小克的遥控器</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Noto Sans SC', sans-serif;
+  background: #1a1a2e;
+  color: #e8e8e8;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.container {
+  max-width: 420px;
+  width: 90%;
+  padding: 40px 30px;
+  background: rgba(22, 33, 62, 0.9);
+  border-radius: 20px;
+  border: 1px solid rgba(74, 111, 165, 0.3);
+  text-align: center;
+}
+
+h1 {
+  font-size: 1.4em;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, #e8945a, #6b8fc7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+  color: #a0a8b8;
+  font-size: 0.85em;
+  margin-bottom: 30px;
+}
+
+.status-box {
+  background: rgba(15, 52, 96, 0.5);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.status-dot.off { background: #e74c3c; }
+.status-dot.on { background: #2ecc71; animation: pulse 1.5s infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.status-label {
+  font-size: 0.95em;
+  vertical-align: middle;
+}
+
+.btn {
+  display: inline-block;
+  padding: 12px 32px;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 0.95em;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin: 6px;
+}
+
+.btn-connect {
+  background: linear-gradient(135deg, #e8945a, #f4b183);
+  color: #1a1a2e;
+  font-weight: 700;
+}
+
+.btn-connect:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(232, 148, 90, 0.4); }
+
+.btn-disconnect {
+  background: rgba(231, 76, 60, 0.2);
+  color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+.btn-stop {
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+  margin-top: 12px;
+}
+
+.log {
+  margin-top: 20px;
+  background: rgba(10, 10, 20, 0.5);
+  border-radius: 10px;
+  padding: 15px;
+  max-height: 200px;
+  overflow-y: auto;
+  text-align: left;
+  font-size: 0.78em;
+  color: #a0a8b8;
+  line-height: 1.6;
+}
+
+.log-entry.ok { color: #2ecc71; }
+.log-entry.err { color: #e74c3c; }
+.log-entry.cmd { color: #e8945a; }
+
+.current-state {
+  margin-top: 15px;
+  font-size: 0.85em;
+  color: #6b8fc7;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>BLE Bridge</h1>
+  <p class="subtitle">小克的遥控器中转站</p>
+
+  <div class="status-box">
+    <div id="ble-status">
+      <span class="status-dot off" id="ble-dot"></span>
+      <span class="status-label" id="ble-label">蓝牙未连接</span>
+    </div>
+    <div style="margin-top: 10px;">
+      <span class="status-dot off" id="server-dot"></span>
+      <span class="status-label" id="server-label">服务器未连接</span>
+    </div>
+  </div>
+
+  <div id="connect-area">
+    <button class="btn btn-connect" id="btn-connect" onclick="connectBLE()">连接玩具</button>
+  </div>
+
+  <div id="connected-area" style="display:none;">
+    <button class="btn btn-disconnect" onclick="disconnectBLE()">断开蓝牙</button>
+    <button class="btn btn-stop" onclick="sendStop()">紧急停止</button>
+  </div>
+
+  <div class="current-state" id="current-state"></div>
+
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+const VPS_URL = 'http://175.24.174.99:8080';
+const SERVICE_UUID = 0xFFE0;
+const WRITE_UUID = 0xFFE1;
+
+let device = null;
+let writeChar = null;
+let pollTimer = null;
+let lastState = null;
+
+function log(msg, type) {
+  const el = document.getElementById('log');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry ' + (type || '');
+  const now = new Date().toLocaleTimeString('zh-CN');
+  entry.textContent = `[${now}] ${msg}`;
+  el.appendChild(entry);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setBleStatus(connected) {
+  document.getElementById('ble-dot').className = 'status-dot ' + (connected ? 'on' : 'off');
+  document.getElementById('ble-label').textContent = connected ? '蓝牙已连接' : '蓝牙未连接';
+  document.getElementById('connect-area').style.display = connected ? 'none' : 'block';
+  document.getElementById('connected-area').style.display = connected ? 'block' : 'none';
+}
+
+function setServerStatus(connected) {
+  document.getElementById('server-dot').className = 'status-dot ' + (connected ? 'on' : 'off');
+  document.getElementById('server-label').textContent = connected ? '服务器已连接' : '服务器未连接';
+}
+
+async function connectBLE() {
+  try {
+    log('正在搜索蓝牙设备...');
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }],
+      optionalServices: [SERVICE_UUID]
+    });
+
+    log('找到设备: ' + device.name, 'ok');
+
+    device.addEventListener('gattserverdisconnected', () => {
+      log('蓝牙已断开', 'err');
+      setBleStatus(false);
+      stopPolling();
+      writeChar = null;
+    });
+
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    writeChar = await service.getCharacteristic(WRITE_UUID);
+
+    log('蓝牙连接成功!', 'ok');
+    setBleStatus(true);
+    startPolling();
+  } catch (e) {
+    log('连接失败: ' + e.message, 'err');
+  }
+}
+
+function disconnectBLE() {
+  if (device && device.gatt.connected) {
+    device.gatt.disconnect();
+  }
+  stopPolling();
+  setBleStatus(false);
+  writeChar = null;
+  log('已断开蓝牙');
+}
+
+function buildCommand(mode, intensity) {
+  return new Uint8Array([0x55, 0x09, 0x00, 0x00, mode, intensity, 0x00]);
+}
+
+async function sendBLECommand(mode, intensity) {
+  if (!writeChar) {
+    log('蓝牙未连接，无法发送', 'err');
+    return;
+  }
+  try {
+    const cmd = buildCommand(mode, intensity);
+    const hex = Array.from(cmd).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    log(`发送指令: ${hex}`, 'cmd');
+    await writeChar.writeValue(cmd);
+    log('指令发送成功', 'ok');
+  } catch (e) {
+    log('发送失败: ' + e.message, 'err');
+  }
+}
+
+async function sendStop() {
+  await sendBLECommand(0, 0);
+  try {
+    await fetch(VPS_URL + '/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 0, intensity: 0, active: false })
+    });
+  } catch (e) {}
+  log('已发送停止指令', 'ok');
+}
+
+async function pollState() {
+  try {
+    const res = await fetch(VPS_URL + '/state');
+    const state = await res.json();
+    setServerStatus(true);
+
+    const stateStr = `模式: ${state.mode} | 强度: ${state.intensity} | ${state.active ? '运行中' : '待机'}`;
+    document.getElementById('current-state').textContent = stateStr;
+
+    const changed = !lastState ||
+      lastState.mode !== state.mode ||
+      lastState.intensity !== state.intensity ||
+      lastState.active !== state.active;
+
+    if (changed && lastState !== null) {
+      if (state.active && (state.mode > 0 || state.intensity > 0)) {
+        log(`收到新指令 - 模式:${state.mode} 强度:${state.intensity}`, 'cmd');
+        await sendBLECommand(state.mode, state.intensity);
+      } else if (!state.active || (state.mode === 0 && state.intensity === 0)) {
+        log('收到停止指令', 'cmd');
+        await sendBLECommand(0, 0);
+      }
+    }
+
+    lastState = state;
+  } catch (e) {
+    setServerStatus(false);
+  }
+}
+
+function startPolling() {
+  log('开始监听服务器指令...', 'ok');
+  pollState();
+  pollTimer = setInterval(pollState, 2000);
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  setServerStatus(false);
+}
+</script>
+
+</body>
+</html>
